@@ -161,11 +161,10 @@ while ($true) {
         # get-status, restart, start, stop, reboot(!PC!)
         Write-Host "$(Get-Timestamp) - Recieved: $msgText"
         if ($msgText -match '/.*') {
-            $test = ($msgText -replace '/').TrimStart()
-            $test
+            $textcmd = ($msgText -replace '/').TrimStart()
             $acceptableStates = @{}
             $APT = ''
-            $CMD = $test -split ' '
+            $CMD = $textcmd -split ' '
             $cmdAction = [string]$CMD[0]
             $cmdParam = [string]$CMD[1]
             if ($cmdParam -notin $validApps.appAlias -and $cmdAction -ne 'status') {
@@ -173,9 +172,9 @@ while ($true) {
                 SendTGMessage -Messagetext $StatusAU -ChatID $Telegramchatid
                 
             }
-            $Test = $ConfigFile.configuration.Commands.cmd | Where-Object { $_.appAlias.ToLower() -eq $cmdParam.ToLower() } | Select-Object Program, appAlias, appName, description
-            $appProgram = $Test.Program
-            $AppName = $Test.appName
+            $AppDetails = $ConfigFile.configuration.Commands.cmd | Where-Object { $_.appAlias.ToLower() -eq $cmdParam.ToLower() } | Select-Object Program, appAlias, appName, description
+            $appProgram = $AppDetails.Program
+            $AppName = $AppDetails.appName
             if ($null -eq $AppName -and $cmdAction -ne 'status') {
                 Write-Host "$cmdParam is invalid."
             }
