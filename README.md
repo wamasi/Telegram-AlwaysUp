@@ -19,8 +19,10 @@ Telegram
 ## Script Setup/Execution Walkthrough:
 1. Run `path\to\Telegram_AlwaysUp.ps1 -nc`
 2. Fill out xml with
- - Telegram tokenId and chatId
- - AlwaysUp Commmands paramters.
-   - ex.: `<cmd Program="AlwaysUp" appAlias="Plex" appName="Plex Media Server" description="" />`
- - AlwaysUp Credentials
-   - Note: Password setup through AlwaysUp Web API service is used in its MD5 hash from not the original password.
+   - Telegram tokenId and chatId
+   - AlwaysUp Commmands paramters.
+     - ex.: `<cmd Program="AlwaysUp" appAlias="Plex" appName="Plex Media Server" description="" />`
+   - AlwaysUp Credentials
+     - Note: Password setup through AlwaysUp Web API service is used in its MD5 hash from not the original password.
+ 3. Run `path\to\Telegram_AlwaysUp.ps1`
+   - If configured correctly you should see it checking for messages from the chat group.
