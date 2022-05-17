@@ -59,7 +59,6 @@ function Get-AlwaysUpResponse {
         return $return
     }
 }
-
 function Get-MsgTime {
     param (
         [Parameter(Mandatory = $true)]
@@ -170,7 +169,7 @@ while ($true) {
             $cmdAction = [string]$CMD[0]
             $cmdParam = [string]$CMD[1]
             if ($cmdParam -notin $validApps.appAlias -and $cmdAction -ne 'status') {
-                $StatusAU = "($cmdAction) or ($cmdParam) is not a valid App."
+                $StatusAU = "($cmdAction) or ($cmdParam) is not a valid command combination."
                 SendTGMessage -Messagetext $StatusAU -ChatID $Telegramchatid
                 
             }
@@ -189,9 +188,9 @@ while ($true) {
                     restart { $actionType = 'restart'; $acceptableStates = 'Running', 'Waiting' }
                     reboot { $actionType = 'reboot' }
                     status { $actionType = 'get-status' }
-                    default { "$cmdAction is invalid." ; break }
+                    default { $actionType = ''; "$cmdAction is invalid." ; break }
                 }
-                if (( $PrecheckState -in $acceptableStates)) {
+                if (( $PrecheckState -in $acceptableStates -and $actionType -ne '')) {
                     $actionMsg = '{0} - {1} is currently in "{2}" status. Command executing "{3}".' -f $appProgram, $AppName, $PrecheckState, $actionType
                     $StatusAU = Get-AlwaysUpResponse -AppFunction $actionType -AppName $AppName
                     SendTGMessage -Messagetext $actionMsg -ChatID $Telegramchatid
@@ -216,6 +215,9 @@ while ($true) {
                         }
                         Start-Sleep -Milliseconds 500
                     }
+                }elseif ($actionType -eq '') {
+                    $StatusAU = 'Incorrect command'
+                    SendTGMessage -Messagetext $StatusAU -ChatID $Telegramchatid
                 }
                 else {
                     $astatelist = [String]::Join(', ', $acceptableStates);
