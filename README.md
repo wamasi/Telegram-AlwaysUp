@@ -23,6 +23,6 @@ Telegram
    - AlwaysUp Commmands paramters.
      - ex.: `<cmd Program="AlwaysUp" appAlias="Plex" appName="Plex Media Server" description="" />`
    - AlwaysUp Credentials
-     - Note: Password setup through AlwaysUp Web API service is used in its MD5 hash from not the original password.
+     - Note: Password setup through AlwaysUp Web API service is used in its MD5 hash not the original password you created.
  3. Run `path\to\Telegram_AlwaysUp.ps1`
    - If configured correctly you should see it checking for messages from the chat group.
