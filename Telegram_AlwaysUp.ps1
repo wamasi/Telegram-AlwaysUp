@@ -78,7 +78,7 @@ function ReadTGMessage {
     }
     Catch {
         Write-Host $_.exception.message -ForegroundColor red
-        return 'TGFail'
+        return 'TelegramFail'
     }
 }
 function SendTGMessage {
@@ -153,7 +153,7 @@ while ($true) {
     $msgText = $messages[0].message.text
     $msgId = $messages[0].message.message_id
     $msgTime = Get-MsgTime $messages[0].message.date
-    if ($messages -like 'TGFail') {
+    if ($messages -like 'TelegramFail') {
         Write-Host "$(Get-Timestamp) - Issue fetching message. Check the authentication Key..."
         Start-Sleep -Seconds 10
     }
@@ -170,7 +170,6 @@ while ($true) {
             if ($cmdParam -notin $validApps.appAlias -and $cmdAction -ne 'status') {
                 $StatusAU = "($cmdAction) or ($cmdParam) is not a valid command combination."
                 SendTGMessage -Messagetext $StatusAU -ChatID $Telegramchatid
-                
             }
             $AppDetails = $ConfigFile.configuration.Commands.cmd | Where-Object { $_.appAlias.ToLower() -eq $cmdParam.ToLower() } | Select-Object Program, appAlias, appName, description
             $appProgram = $AppDetails.Program
