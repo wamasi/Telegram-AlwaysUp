@@ -49,8 +49,10 @@ function Get-AlwaysUpResponse {
     $AURI = "$($AlwaysUpBase)$($AppFunction)?password=$($AlwaysUpKey)$($AN)$($AT)&verbose=true"
     $AlwaysUpResponse = Invoke-WebRequest -Uri $AURI
     if ($Appfunction -ne 'get-status' ) {
-        $msg = $AlwaysUpResponse.content
-        return $msg
+        $return.content = $AlwaysUpResponse.content
+        $return.StatusCode = $AlwaysUpResponse.StatusCode
+        $return.StatusDescription = $AlwaysUpResponse.StatusDescription
+        return $return
     }
     if ($AppFunction -eq 'get-status') {
         $AlwaysUpXML = [xml]$AlwaysUpResponse
@@ -62,8 +64,8 @@ function Get-AlwaysUpResponse {
             $AppList = '<b>App: </b>' + $_.name + "`n<b>Status: </b>" + $_.state + "`n"
             $msg += $AppList + "`n"
         }
-        $return.status = $APStatusRepsonse.state
         $return.msg = $msg
+        $return.state = $APStatusRepsonse.state
         return $return
     }
 }
@@ -95,17 +97,29 @@ function SendTGMessage {
         $Messagetext,
         $ChatID
     )
-    
-    $TGMessage = @"
-Preparing to send TG Message
------------------ Message that will be sent ----------------
-$Messagetext
----------------- End of Message ---------------------------
-"@
+    $MessageTextFormat = ''
+    $TGMessage = "Preparing to send Telegram Message`n"
+    $TGMessage += "$(Get-Timestamp) - ----------------- Message that will be sent ----------------`n"
+    if ($Messagetext -match "`n") {
+    $MessageTextFormat = $Messagetext -split "`n" | Where-Object {$_.trim() -ne ''}
+        foreach ($line in $MessageTextFormat) {
+            $TGMessage += "$(Get-TimeStamp) - $line`n"
+        }
+    } else {
+        $TGMessage += "$(Get-Timestamp) - $Messagetext"
+    }
+    $TGMessage +="`n$(Get-Timestamp) - ---------------- End of Message ---------------------------"
+    #$TGMessage = @"
+# Preparing to send Telegram Message
+# $(Get-Timestamp) - ----------------- Message that will be sent ----------------
+# $(Get-Timestamp) - $Messagetext
+# $(Get-Timestamp) - ---------------- End of Message ---------------------------
+# "@
     Write-ConsoleMessage "$TGMessage"
-    Invoke-WebRequest -Uri "$($TelegramBase)sendMessage?chat_id=$($ChatID)&text=$($Messagetext)&parse_mode=html"
+    Invoke-WebRequest -Uri "$($TelegramBase)sendMessage?chat_id=$($ChatID)&text=$($Messagetext)&parse_mode=html" | Out-Null
     Write-ConsoleMessage 'Message has been sent.'
 }
+# Setup
 $ScriptDirectory = $PSScriptRoot
 $ConfigPath = "$ScriptDirectory\config.xml"
 $xmlConfig = @'
@@ -170,7 +184,7 @@ else {
     Write-ConsoleMessage "New Message Time: $InitialMsgTime. New MessageID: $InitialMsgID."
     SendTGMessage -Messagetext "Script starting up." -ChatID $Telegramchatid
 }
-
+# Main
 while ($true) {
     Start-Sleep 1
     $messages = ReadTGMessage
@@ -182,8 +196,7 @@ while ($true) {
         Start-Sleep -Seconds 10
     }
     if ($msgText -match '/.*' -and ($InitialChatId -eq $Telegramchatid) -and ($msgTime -gt $InitialMsgTime) -and ($msgId -gt $InitialMsgID)) {
-        # get-status, restart, start, stop, reboot(!PC!)
-        Write-ConsoleMessage "Recieved: $msgText"
+        Write-ConsoleMessage "Telegram recieved: $msgText"
         if ($msgText -match '/.*') {
             $textcmd = ($msgText -replace '/').TrimStart()
             $acceptableStates = @{}
@@ -204,7 +217,7 @@ while ($true) {
             }
             if ( $appProgram -eq 'Alwaysup') {
                 $PreCheck = Get-AlwaysUpResponse -AppFunction 'get-status' -AppName $AppName -AppTag $APT
-                $PrecheckState = $PreCheck.status
+                $PrecheckState = $PreCheck.state
                 switch ($cmdAction) {
                     start { $actionType = 'start'; $acceptableStates = 'Stopped' }
                     stop { $actionType = 'stop'; $acceptableStates = 'Running', 'Waiting' }
@@ -216,18 +229,19 @@ while ($true) {
                 if (( $PrecheckState -in $acceptableStates -and $actionType -ne '')) {
                     $actionMsg = '{0} - {1} is currently in "{2}" status. Command executing "{3}".' -f $appProgram, $AppName, $PrecheckState, $actionType
                     $StatusAU = Get-AlwaysUpResponse -AppFunction $actionType -AppName $AppName
+                    Write-ConsoleMessage "$appProgram Response: StatusCode: $($StatusAU.StatusCode) - Status: $($StatusAU.StatusDescription) - Content: $($StatusAU.content)."
                     SendTGMessage -Messagetext $actionMsg -ChatID $Telegramchatid
                     $PostCheck = Get-AlwaysUpResponse -AppFunction 'get-status' -AppName $AppName -AppTag $APT
-                    $PostCheckStatus = $PostCheck.status
+                    $PostCheckStatus = $PostCheck.state
                     while ($true) {
                         if ($PrecheckState -eq $PostCheckStatus -and $actionType -ne 'restart') {
                             $PostCheck = Get-AlwaysUpResponse -AppFunction 'get-status' -AppName $AppName -AppTag $APT
-                            $PostCheckStatus = $PostCheck.status
+                            $PostCheckStatus = $PostCheck.state
                             continue
                         }
                         elseif ($PrecheckState -ne $PostCheckStatus -and $actionType -eq 'restart') {
                             $PostCheck = Get-AlwaysUpResponse -AppFunction 'get-status' -AppName $AppName -AppTag $APT
-                            $PostCheckStatus = $PostCheck.status
+                            $PostCheckStatus = $PostCheck.state
                             continue
                         }
                         else {
@@ -255,7 +269,6 @@ while ($true) {
                 $actionType = 'get-status'
                 $actionMsg = '{0} - {1}. Sending status of all AlwaysUp objects' -f $appProgram, $actionType
                 $StatusAU = Get-AlwaysUpResponse -AppFunction $actionType
-                $StatusAU.msg
                 SendTGMessage -Messagetext $StatusAU.msg -ChatID $Telegramchatid
                 Write-ConsoleMessage $actionMsg
             }
