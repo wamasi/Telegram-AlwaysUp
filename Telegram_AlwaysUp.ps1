@@ -3,6 +3,14 @@ param (
     [Alias('NC')]
     [switch]$NewConfig
 )
+function Write-ConsoleMessage {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$ConsoleMsg
+    )
+    Write-Host "$(Get-Timestamp) - $ConsoleMsg"
+    Write-Output "$(Get-Timestamp) - $ConsoleMsg" | Out-File $TelegramAlwaysUpLog -Append
+}
 function Get-Day {
     return (Get-Date -Format 'yy-MM-dd')
 }
@@ -87,12 +95,16 @@ function SendTGMessage {
         $Messagetext,
         $ChatID
     )
-    Write-Host "$(Get-Timestamp) - Preparing to send TG Message" 
-    Write-Host '----------------- Message that will be sent ----------------'
-    Write-Host $Messagetext
-    Write-Host ' ---------------- End of Message ---------------------------'
+    
+    $TGMessage = @"
+Preparing to send TG Message
+----------------- Message that will be sent ----------------
+$Messagetext
+---------------- End of Message ---------------------------
+"@
+    Write-ConsoleMessage "$TGMessage"
     Invoke-WebRequest -Uri "$($TelegramBase)sendMessage?chat_id=$($ChatID)&text=$($Messagetext)&parse_mode=html"
-    Write-Host "$(Get-Timestamp) - Message should be sent"
+    Write-ConsoleMessage 'Message has been sent.'
 }
 $ScriptDirectory = $PSScriptRoot
 $ConfigPath = "$ScriptDirectory\config.xml"
@@ -125,12 +137,12 @@ $xmlConfig = @'
 if ($NewConfig) {
     if (!(Test-Path $ConfigPath -PathType Leaf) -or [String]::IsNullOrWhiteSpace((Get-Content $ConfigPath))) {
         New-Item $ConfigPath -ItemType File -Force
-        Write-Output "$(Get-Timestamp) - $ConfigPath File Created successfully."
+        Write-ConsoleMessage "$ConfigPath File Created successfully."
         $xmlconfig | Set-Content $ConfigPath
         exit
     }
     else {
-        Write-Output "$(Get-Timestamp) - $ConfigPath File Exists."
+        Write-ConsoleMessage "$ConfigPath File Exists."
         exit
     }
 }
@@ -147,6 +159,18 @@ $intialMessage = ReadTGMessage
 $InitialMsgID = $intialMessage[0].message.message_id
 $InitialMsgTime = Get-MsgTime $intialMessage[0].message.date
 $InitialChatId = $intialMessage[0].message.chat.id
+$TelegramAlwaysUpLog = "$ScriptDirectory\TelegramAlwaysUp.log"
+if (!(Test-Path $TelegramAlwaysUpLog -PathType Leaf)) {
+    New-Item $TelegramAlwaysUpLog -ItemType File -Force
+    Write-ConsoleMessage "$TelegramAlwaysUpLog File Created successfully."
+    Write-ConsoleMessage "New Message Time: $msgTime. New MessageID: $InitialMsgID."
+}
+else {
+    Write-ConsoleMessage "$TelegramAlwaysUpLog script starting up."
+    Write-ConsoleMessage "New Message Time: $InitialMsgTime. New MessageID: $InitialMsgID."
+    SendTGMessage -Messagetext "Script starting up." -ChatID $Telegramchatid
+}
+
 while ($true) {
     Start-Sleep 1
     $messages = ReadTGMessage
@@ -154,12 +178,12 @@ while ($true) {
     $msgId = $messages[0].message.message_id
     $msgTime = Get-MsgTime $messages[0].message.date
     if ($messages -like 'TelegramFail') {
-        Write-Host "$(Get-Timestamp) - Issue fetching message. Check the authentication Key..."
+        Write-ConsoleMessage 'Issue fetching message. Check the authentication Key...'
         Start-Sleep -Seconds 10
     }
     if ($msgText -match '/.*' -and ($InitialChatId -eq $Telegramchatid) -and ($msgTime -gt $InitialMsgTime) -and ($msgId -gt $InitialMsgID)) {
         # get-status, restart, start, stop, reboot(!PC!)
-        Write-Host "$(Get-Timestamp) - Recieved: $msgText"
+        Write-ConsoleMessage "Recieved: $msgText"
         if ($msgText -match '/.*') {
             $textcmd = ($msgText -replace '/').TrimStart()
             $acceptableStates = @{}
@@ -170,12 +194,13 @@ while ($true) {
             if ($cmdParam -notin $validApps.appAlias -and $cmdAction -ne 'status') {
                 $StatusAU = "($cmdAction) or ($cmdParam) is not a valid command combination."
                 SendTGMessage -Messagetext $StatusAU -ChatID $Telegramchatid
+                Write-ConsoleMessage $StatusAU
             }
             $AppDetails = $ConfigFile.configuration.Commands.cmd | Where-Object { $_.appAlias.ToLower() -eq $cmdParam.ToLower() } | Select-Object Program, appAlias, appName, description
             $appProgram = $AppDetails.Program
             $AppName = $AppDetails.appName
             if ($null -eq $AppName -and $cmdAction -ne 'status') {
-                Write-Host "$cmdParam is invalid."
+                Write-ConsoleMessage "$cmdParam is invalid."
             }
             if ( $appProgram -eq 'Alwaysup') {
                 $PreCheck = Get-AlwaysUpResponse -AppFunction 'get-status' -AppName $AppName -AppTag $APT
@@ -208,12 +233,13 @@ while ($true) {
                         else {
                             $actionMsg = '{0} - {1} is now in "{2}" status. Command executed.' -f $appProgram, $AppName, $PostCheckStatus, $actionType
                             SendTGMessage -Messagetext $actionMsg -ChatID $Telegramchatid
-                            Write-Host $actionMsg
+                            Write-ConsoleMessage $actionMsg
                             break
                         }
-                        Start-Sleep -Milliseconds 500
+                        Start-Sleep -Milliseconds 1
                     }
-                }elseif ($actionType -eq '') {
+                }
+                elseif ($actionType -eq '') {
                     $StatusAU = 'Incorrect command'
                     SendTGMessage -Messagetext $StatusAU -ChatID $Telegramchatid
                 }
@@ -222,7 +248,7 @@ while ($true) {
                     $actionMsg = '{0} - {1} is currently in "{2}" status. Was expecting {4} status(es). Not executing command "{3}".' -f $appProgram, $AppName, $PrecheckState, $actionType, $astatelist
                     $StatusAU = 'Incorrect command parameter'
                     SendTGMessage -Messagetext $actionMsg -ChatID $Telegramchatid
-                    Write-Host $actionMsg
+                    Write-ConsoleMessage $actionMsg
                 }
             }
             elseif ($cmdAction -eq 'status') {
@@ -231,27 +257,29 @@ while ($true) {
                 $StatusAU = Get-AlwaysUpResponse -AppFunction $actionType
                 $StatusAU.msg
                 SendTGMessage -Messagetext $StatusAU.msg -ChatID $Telegramchatid
-                Write-Host $actionMsg
+                Write-ConsoleMessage $actionMsg
             }
             else {
-                $msg = 'Incorrect command.'
+                $msg = "Incorrect command($msgText)."
                 SendTGMessage -Messagetext $msg -ChatID $Telegramchatid
+                Write-ConsoleMessage $msg
             }
         }
         else {
-            $msg = 'Incorrect command parameter'
+            $msg = "Incorrect command parameter($msgText)."
             SendTGMessage -Messagetext $msg -ChatID $Telegramchatid
+            Write-ConsoleMessage $msg
         }
-        <# TO DO:
-        Logs
-        #>
         $msgTime = $InitialMsgTime
         $InitialMsgID = $msgId
+        Write-ConsoleMessage "New Message Time: $msgTime. New MessageID: $InitialMsgID."
     }
     elseif ( ($msgText.trim() -ne '' -or $null -eq $msgText) -and ($msgText -notmatch '/.*') -and ($InitialChatId -eq $Telegramchatid) -and ($msgTime -gt $InitialMsgTime) -and ($msgId -gt $InitialMsgID)) {
         $msg = 'Not a valid command.'
         SendTGMessage -Messagetext $msg -ChatID $Telegramchatid
         $msgTime = $InitialMsgTime
         $InitialMsgID = $msgId
+        Write-ConsoleMessage $msg
+        Write-ConsoleMessage "New Message Time: $msgTime. New MessageID: $InitialMsgID."
     }
 }
