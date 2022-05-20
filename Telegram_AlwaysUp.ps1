@@ -101,21 +101,16 @@ function SendTGMessage {
     $TGMessage = "Preparing to send Telegram Message`n"
     $TGMessage += "$(Get-Timestamp) - ----------------- Message that will be sent ----------------`n"
     if ($Messagetext -match "`n") {
-    $MessageTextFormat = $Messagetext -split "`n" | Where-Object {$_.trim() -ne ''}
+    $MessageTextFormat = $Messagetext -split "`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_)}
         foreach ($line in $MessageTextFormat) {
             $TGMessage += "$(Get-TimeStamp) - $line`n"
         }
     } else {
         $TGMessage += "$(Get-Timestamp) - $Messagetext"
     }
+    $TGMessage = $TGMessage.Trim()
     $TGMessage +="`n$(Get-Timestamp) - ---------------- End of Message ---------------------------"
-    #$TGMessage = @"
-# Preparing to send Telegram Message
-# $(Get-Timestamp) - ----------------- Message that will be sent ----------------
-# $(Get-Timestamp) - $Messagetext
-# $(Get-Timestamp) - ---------------- End of Message ---------------------------
-# "@
-    Write-ConsoleMessage "$TGMessage"
+    Write-ConsoleMessage "$($TGMessage.Trim())"
     Invoke-WebRequest -Uri "$($TelegramBase)sendMessage?chat_id=$($ChatID)&text=$($Messagetext)&parse_mode=html" | Out-Null
     Write-ConsoleMessage 'Message has been sent.'
 }
@@ -267,7 +262,7 @@ while ($true) {
             }
             elseif ($cmdAction -eq 'status') {
                 $actionType = 'get-status'
-                $actionMsg = '{0} - {1}. Sending status of all AlwaysUp objects' -f $appProgram, $actionType
+                $actionMsg = "AlwaysUp - $actionType - Sending status of all AlwaysUp objects"
                 $StatusAU = Get-AlwaysUpResponse -AppFunction $actionType
                 SendTGMessage -Messagetext $StatusAU.msg -ChatID $Telegramchatid
                 Write-ConsoleMessage $actionMsg
