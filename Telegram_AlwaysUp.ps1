@@ -11,14 +11,8 @@ function Write-ConsoleMessage {
     Write-Host "$(Get-Timestamp) - $ConsoleMsg"
     Write-Output "$(Get-Timestamp) - $ConsoleMsg" | Out-File $TelegramAlwaysUpLog -Append
 }
-function Get-Day {
-    return (Get-Date -Format 'yy-MM-dd')
-}
 function Get-TimeStamp {
     return (Get-Date -Format 'yy-MM-dd HH-mm-ss')
-}
-function Get-Time {
-    return (Get-Date -Format 'MMddHHmmss')
 }
 function Resolve-Command {
     param (
@@ -69,6 +63,116 @@ function Get-AlwaysUpResponse {
         return $return
     }
 }
+function Invoke-AlwaysUp {
+    param (
+        [Parameter(Mandatory = $true)]
+        $msgTextAU,
+        [Parameter(Mandatory = $true)]
+        $cmdActionAU,
+        [Parameter(Mandatory = $true)]
+        $cmdParamAU,
+        [Parameter(Mandatory = $true)]
+        $appProgramAU,
+        [Parameter(Mandatory = $true)]
+        $AppNameAU,
+        [Parameter(Mandatory = $true)]
+        $APTAU
+    )
+    $PreCheck = Get-AlwaysUpResponse -AppFunction 'get-status' -AppName $AppName -AppTag $APT
+    $PrecheckState = $PreCheck.state
+    switch ($cmdAction) {
+        start { $actionType = 'start'; $acceptableStates = 'Stopped' }
+        stop { $actionType = 'stop'; $acceptableStates = 'Running', 'Waiting' }
+        restart { $actionType = 'restart'; $acceptableStates = 'Running', 'Waiting' }
+        default { $actionType = ''; "$cmdAction is invalid." ; break }
+    }
+    if (( $PrecheckState -in $acceptableStates -and $actionType -ne '')) {
+        $actionMsg = '{0} - {1} is currently in "{2}" status. Command executing "{3}".' -f $appProgram, $AppName, $PrecheckState, $actionType
+        $StatusAU = Get-AlwaysUpResponse -AppFunction $actionType -AppName $AppName
+        Write-ConsoleMessage "$appProgram Response: StatusCode: $($StatusAU.StatusCode) - Status: $($StatusAU.StatusDescription) - Content: $($StatusAU.content)."
+        SendTGMessage -Messagetext $actionMsg -ChatID $Telegramchatid
+        $PostCheck = Get-AlwaysUpResponse -AppFunction 'get-status' -AppName $AppName -AppTag $APT
+        $PostCheckStatus = $PostCheck.state
+        while ($true) {
+            if ($PrecheckState -eq $PostCheckStatus -and $actionType -ne 'restart') {
+                $PostCheck = Get-AlwaysUpResponse -AppFunction 'get-status' -AppName $AppName -AppTag $APT
+                $PostCheckStatus = $PostCheck.state
+                continue
+            }
+            elseif ($PrecheckState -ne $PostCheckStatus -and $actionType -eq 'restart') {
+                $PostCheck = Get-AlwaysUpResponse -AppFunction 'get-status' -AppName $AppName -AppTag $APT
+                $PostCheckStatus = $PostCheck.state
+                continue
+            }
+            else {
+                $actionMsg = '{0} - {1} is now in "{2}" status. Command executed.' -f $appProgram, $AppName, $PostCheckStatus, $actionType
+                SendTGMessage -Messagetext $actionMsg -ChatID $Telegramchatid
+                Write-ConsoleMessage $actionMsg
+                break
+            }
+            Start-Sleep -Milliseconds 1
+        }
+    }
+    elseif ($actionType -eq '') {
+        $StatusAU = "$($msgText) Incorrect command."
+        SendTGMessage -Messagetext $StatusAU -ChatID $Telegramchatid
+    }
+    else {
+        $astatelist = [String]::Join(', ', $acceptableStates);
+        $actionMsg = '{0} - {1} is currently in "{2}" status. Was expecting {4} status(es). Not executing command "{3}".' -f $appProgram, $AppName, $PrecheckState, $actionType, $astatelist
+        $StatusAU = 'Incorrect command parameter'
+        SendTGMessage -Messagetext $actionMsg -ChatID $Telegramchatid
+        Write-ConsoleMessage $actionMsg
+    }
+}
+function Invoke-Sonarr {
+    param (
+        [Parameter(Mandatory = $true)]
+        $msgTextAU,
+        [Parameter(Mandatory = $true)]
+        $cmdActionAU,
+        [Parameter(Mandatory = $true)]
+        $cmdParamAU,
+        [Parameter(Mandatory = $true)]
+        $appProgramAU,
+        [Parameter(Mandatory = $true)]
+        $AppNameAU,
+        [Parameter(Mandatory = $true)]
+        $APTAU
+    )
+}
+function Invoke-Radarr  {
+    param (
+        [Parameter(Mandatory = $true)]
+        $msgTextAU,
+        [Parameter(Mandatory = $true)]
+        $cmdActionAU,
+        [Parameter(Mandatory = $true)]
+        $cmdParamAU,
+        [Parameter(Mandatory = $true)]
+        $appProgramAU,
+        [Parameter(Mandatory = $true)]
+        $AppNameAU,
+        [Parameter(Mandatory = $true)]
+        $APTAU
+    )
+}
+function Invoke-Prowlarr {
+    param (
+        [Parameter(Mandatory = $true)]
+        $msgTextAU,
+        [Parameter(Mandatory = $true)]
+        $cmdActionAU,
+        [Parameter(Mandatory = $true)]
+        $cmdParamAU,
+        [Parameter(Mandatory = $true)]
+        $appProgramAU,
+        [Parameter(Mandatory = $true)]
+        $AppNameAU,
+        [Parameter(Mandatory = $true)]
+        $APTAU
+    )
+}
 function Get-MsgTime {
     param (
         [Parameter(Mandatory = $true)]
@@ -101,15 +205,16 @@ function SendTGMessage {
     $TGMessage = "Preparing to send Telegram Message`n"
     $TGMessage += "$(Get-Timestamp) - ----------------- Message that will be sent ----------------`n"
     if ($Messagetext -match "`n") {
-    $MessageTextFormat = $Messagetext -split "`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_)}
+        $MessageTextFormat = $Messagetext -split "`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
         foreach ($line in $MessageTextFormat) {
             $TGMessage += "$(Get-TimeStamp) - $line`n"
         }
-    } else {
+    }
+    else {
         $TGMessage += "$(Get-Timestamp) - $Messagetext"
     }
     $TGMessage = $TGMessage.Trim()
-    $TGMessage +="`n$(Get-Timestamp) - ---------------- End of Message ---------------------------"
+    $TGMessage += "`n$(Get-Timestamp) - ---------------- End of Message ---------------------------"
     Write-ConsoleMessage "$($TGMessage.Trim())"
     Invoke-WebRequest -Uri "$($TelegramBase)sendMessage?chat_id=$($ChatID)&text=$($Messagetext)&parse_mode=html" | Out-Null
     Write-ConsoleMessage 'Message has been sent.'
@@ -175,9 +280,14 @@ if (!(Test-Path $TelegramAlwaysUpLog -PathType Leaf)) {
     Write-ConsoleMessage "New Message Time: $msgTime. New MessageID: $InitialMsgID."
 }
 else {
-    Write-ConsoleMessage "$TelegramAlwaysUpLog script starting up."
-    Write-ConsoleMessage "New Message Time: $InitialMsgTime. New MessageID: $InitialMsgID."
-    SendTGMessage -Messagetext "Script starting up." -ChatID $Telegramchatid
+    $startUpMsg = @"
+--------------------- $(Get-TimeStamp) ---------------------
+$(Get-TimeStamp) - $TelegramAlwaysUpLog script starting up.
+$(Get-TimeStamp) - New Message Time: $InitialMsgTime. New MessageID: $InitialMsgID.
+$(Get-TimeStamp) - ------------------------------------------------------------
+"@
+    Write-ConsoleMessage $startUpMsg
+    SendTGMessage -Messagetext 'Script starting up.' -ChatID $Telegramchatid
 }
 # Main
 while ($true) {
@@ -199,78 +309,52 @@ while ($true) {
             $CMD = $textcmd -split ' '
             $cmdAction = [string]$CMD[0]
             $cmdParam = [string]$CMD[1]
-            if ($cmdParam -notin $validApps.appAlias -and $cmdAction -ne 'status') {
-                $StatusAU = "($cmdAction) or ($cmdParam) is not a valid command combination."
+            if ($cmdParam -notin $validApps.appAlias -and $cmdAction -notin 'status', 'reboot') {
+                $StatusAU = "($msgText) is not a valid."
                 SendTGMessage -Messagetext $StatusAU -ChatID $Telegramchatid
                 Write-ConsoleMessage $StatusAU
             }
-            $AppDetails = $ConfigFile.configuration.Commands.cmd | Where-Object { $_.appAlias.ToLower() -eq $cmdParam.ToLower() } | Select-Object Program, appAlias, appName, description
-            $appProgram = $AppDetails.Program
-            $AppName = $AppDetails.appName
-            if ($null -eq $AppName -and $cmdAction -ne 'status') {
-                Write-ConsoleMessage "$cmdParam is invalid."
-            }
-            if ( $appProgram -eq 'Alwaysup') {
-                $PreCheck = Get-AlwaysUpResponse -AppFunction 'get-status' -AppName $AppName -AppTag $APT
-                $PrecheckState = $PreCheck.state
-                switch ($cmdAction) {
-                    start { $actionType = 'start'; $acceptableStates = 'Stopped' }
-                    stop { $actionType = 'stop'; $acceptableStates = 'Running', 'Waiting' }
-                    restart { $actionType = 'restart'; $acceptableStates = 'Running', 'Waiting' }
-                    reboot { $actionType = 'reboot' }
-                    status { $actionType = 'get-status' }
-                    default { $actionType = ''; "$cmdAction is invalid." ; break }
-                }
-                if (( $PrecheckState -in $acceptableStates -and $actionType -ne '')) {
-                    $actionMsg = '{0} - {1} is currently in "{2}" status. Command executing "{3}".' -f $appProgram, $AppName, $PrecheckState, $actionType
-                    $StatusAU = Get-AlwaysUpResponse -AppFunction $actionType -AppName $AppName
-                    Write-ConsoleMessage "$appProgram Response: StatusCode: $($StatusAU.StatusCode) - Status: $($StatusAU.StatusDescription) - Content: $($StatusAU.content)."
-                    SendTGMessage -Messagetext $actionMsg -ChatID $Telegramchatid
-                    $PostCheck = Get-AlwaysUpResponse -AppFunction 'get-status' -AppName $AppName -AppTag $APT
-                    $PostCheckStatus = $PostCheck.state
-                    while ($true) {
-                        if ($PrecheckState -eq $PostCheckStatus -and $actionType -ne 'restart') {
-                            $PostCheck = Get-AlwaysUpResponse -AppFunction 'get-status' -AppName $AppName -AppTag $APT
-                            $PostCheckStatus = $PostCheck.state
-                            continue
-                        }
-                        elseif ($PrecheckState -ne $PostCheckStatus -and $actionType -eq 'restart') {
-                            $PostCheck = Get-AlwaysUpResponse -AppFunction 'get-status' -AppName $AppName -AppTag $APT
-                            $PostCheckStatus = $PostCheck.state
-                            continue
-                        }
-                        else {
-                            $actionMsg = '{0} - {1} is now in "{2}" status. Command executed.' -f $appProgram, $AppName, $PostCheckStatus, $actionType
-                            SendTGMessage -Messagetext $actionMsg -ChatID $Telegramchatid
-                            Write-ConsoleMessage $actionMsg
-                            break
-                        }
-                        Start-Sleep -Milliseconds 1
-                    }
-                }
-                elseif ($actionType -eq '') {
-                    $StatusAU = 'Incorrect command'
-                    SendTGMessage -Messagetext $StatusAU -ChatID $Telegramchatid
-                }
-                else {
-                    $astatelist = [String]::Join(', ', $acceptableStates);
-                    $actionMsg = '{0} - {1} is currently in "{2}" status. Was expecting {4} status(es). Not executing command "{3}".' -f $appProgram, $AppName, $PrecheckState, $actionType, $astatelist
-                    $StatusAU = 'Incorrect command parameter'
-                    SendTGMessage -Messagetext $actionMsg -ChatID $Telegramchatid
-                    Write-ConsoleMessage $actionMsg
-                }
-            }
             elseif ($cmdAction -eq 'status') {
                 $actionType = 'get-status'
-                $actionMsg = "AlwaysUp - $actionType - Sending status of all AlwaysUp objects"
+                $actionMsg = "AlwaysUp - $actionType - Sending status of all AlwaysUp objects."
                 $StatusAU = Get-AlwaysUpResponse -AppFunction $actionType
                 SendTGMessage -Messagetext $StatusAU.msg -ChatID $Telegramchatid
                 Write-ConsoleMessage $actionMsg
             }
+            elseif ($cmdAction -eq 'reboot') {
+                $actionType = 'reboot'
+                $actionMsg = "AlwaysUp - $actionType - Sending computer reboot command."
+                $StatusAU = Get-AlwaysUpResponse -AppFunction $actionType
+                Write-ConsoleMessage "$appProgram Response: StatusCode: $($StatusAU.StatusCode) - Status: $($StatusAU.StatusDescription) - Content: $($StatusAU.content)."
+                SendTGMessage -Messagetext $StatusAU.msg -ChatID $Telegramchatid
+                Write-ConsoleMessage $actionMsg
+            }
             else {
-                $msg = "Incorrect command($msgText)."
-                SendTGMessage -Messagetext $msg -ChatID $Telegramchatid
-                Write-ConsoleMessage $msg
+                $AppDetails = $ConfigFile.configuration.Commands.cmd | Where-Object { $_.appAlias.ToLower() -eq $cmdParam.ToLower() } | Select-Object Program, appAlias, appName, description
+                $appProgram = $AppDetails.Program
+                $AppName = $AppDetails.appName
+                if ($null -eq $AppName -or $null -eq $appProgram) {
+                    Write-ConsoleMessage "$cmdParam is invalid."
+                }
+                else {
+                    if ( $appProgram -eq 'Alwaysup') {
+                        Invoke-AlwaysUp $msgText $cmdAction $cmdParam $appProgram $AppName $APT
+                    }
+                    elseif ( $appProgram -eq 'Sonarr') {
+                        Invoke-Sonarr $msgText $cmdAction $cmdParam $appProgram $AppName $APT
+                    }
+                    elseif ( $appProgram -eq 'Radarr') {
+                        Invoke-Radarr $msgText $cmdAction $cmdParam $appProgram $AppName $APT
+                    }
+                    elseif ( $appProgram -eq 'Prowlarr') {
+                        Invoke-Prowlarr $msgText $cmdAction $cmdParam $appProgram $AppName $APT
+                    }
+                    else {
+                        $msg = "Incorrect command($msgText)."
+                        SendTGMessage -Messagetext $msg -ChatID $Telegramchatid
+                        Write-ConsoleMessage $msg
+                    }
+                }
             }
         }
         else {
